@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Add or subtract two numbers</title>
+    <style>
+        body {
+            max-width: 760px;
+            margin: 60px auto;
+            padding: 0 20px;
+            font-family: system-ui, sans-serif;
+        }
+        form { display: grid; gap: 12px; max-width: 440px; }
+        .actions { display: flex; gap: 12px; }
+        .actions button { flex: 1; }
+        input, button { padding: 10px; font: inherit; }
+        button { cursor: pointer; }
+        button:disabled { cursor: wait; }
+        #result { min-height: 1.5em; font-weight: bold; overflow-wrap: anywhere; }
+        .success { color: #166534; }
+        .error { color: #b91c1c; }
+        .table-container { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 8px; border-bottom: 1px solid #ddd; text-align: left; }
+        td { overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+    </style>
+</head>
+<body>
+    <h1>Add or subtract two numbers</h1>
+    <p>Enter integers or decimals, such as -3 or 2.5. Use a decimal point.</p>
+
+    <form id="calculator" action="/api/sum" method="post">
+        <label for="first">First operand</label>
+        <input id="first" name="first" type="text" inputmode="decimal">
+
+        <label for="second">Second operand</label>
+        <input id="second" name="second" type="text" inputmode="decimal">
+
+        <div class="actions">
+            <button type="submit">Add</button>
+            <button type="submit" formaction="/api/subtract">Subtract</button>
+        </div>
+    </form>
+
+    <p id="result" role="status" aria-live="polite"></p>
+
+    <section aria-labelledby="history-heading">
+        <h2 id="history-heading">Calculation history</h2>
+        <p id="history-status" role="status"></p>
+        <div class="table-container">
+            <table aria-labelledby="history-heading">
+                <thead>
+                    <tr>
+                        <th scope="col">Time</th>
+                        <th scope="col">Operation</th>
+                        <th scope="col">First operand</th>
+                        <th scope="col">Second operand</th>
+                        <th scope="col">Result</th>
+                    </tr>
+                </thead>
+                <tbody id="history-rows"></tbody>
+            </table>
+        </div>
+    </section>
+
+    <script>
+        const form = document.getElementById("calculator");
+        const firstInput = document.getElementById("first");
+        const secondInput = document.getElementById("second");
+        const buttons = form.querySelectorAll("button");
+        const output = document.getElementById("result");
+        const historyRows = document.getElementById("history-rows");
+        const historyStatus = document.getElementById("history-status");
+        let latestHistoryRequest = 0;
+
+        async function loadHistory() {
+            const request = ++latestHistoryRequest;
+            historyStatus.className = "";
+            historyStatus.textContent = "Loading history...";
+            try {
+                const response = await fetch("/api/history", { cache: "no-store" });
+                if (!response.ok) throw new Error("History request failed");
+                const entries = await response.json();
+                if (request !== latestHistoryRequest) return;
+
+                const rows = entries.map(entry => {
+                    const row = document.createElement("tr");
+                    const time = new Date(entry.createdAt).toLocaleString();
+                    for (const value of [time, entry.operation, entry.firstOperand, entry.secondOperand, entry.result]) {
+                        row.insertCell().textContent = value;
+                    }
+                    return row;
+                });
+                historyRows.replaceChildren(...rows);
+                historyStatus.textContent = rows.length ? "" : "No calculations yet.";
+            } catch (error) {
+                if (request !== latestHistoryRequest) return;
+                historyStatus.className = "error";
+                historyStatus.textContent = "Could not load calculation history. Reload the page to try again.";
+            }
+        }
+
+        form.addEventListener("submit", async function (event) {
+            event.preventDefault();
+            const action = event.submitter?.getAttribute("formaction") || form.action;
+            buttons.forEach(button => button.disabled = true);
+            output.className = "";
+            output.textContent = "Calculating...";
+
+            try {
+                const response = await fetch(action, {
+                    method: "POST",
+                    body: new URLSearchParams({
+                        first: firstInput.value,
+                        second: secondInput.value
+                    })
+                });
+
+                output.textContent = await response.text();
+                output.className = response.ok ? "success" : "error";
+                if (response.ok) loadHistory();
+            } catch (error) {
+                output.textContent = "Could not complete the request. Check that the application is running.";
+                output.className = "error";
+            } finally {
+                buttons.forEach(button => button.disabled = false);
+            }
+        });
+        loadHistory();
+    </script>
+</body>
+</html>
